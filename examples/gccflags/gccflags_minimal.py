@@ -61,6 +61,7 @@ class GccFlagsTuner(MeasurementInterface):
         for param, min, max in GCC_PARAMS:
             gcc_cmd += ' --param {0}={1}'.format(
                 param, cfg[param])
+        print('Compiling with command: {0}'.format(gcc_cmd))
         return self.call_program(gcc_cmd)
 
     def run_precompiled(self, desired_result, input, limit, compile_result, id):
@@ -85,6 +86,12 @@ class GccFlagsTuner(MeasurementInterface):
         cfg = desired_result.configuration.data
         compile_result = self.compile(cfg, 0)
         return self.run_precompiled(desired_result, input, limit, compile_result, 0)
+
+    def save_final_config(self, configuration):
+        '''
+        called at the end of autotuning with the best resultsdb.models.Configuration
+        '''
+        print("Final configuration", configuration.data)
 
 
 if __name__ == '__main__':
