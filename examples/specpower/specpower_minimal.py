@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 #
-# Autotune flags to g++ to optimize the performance of apps/raytracer.cpp
-#
-# This is an extremely simplified version meant only for tutorials
+# Autotune JVM flags to optimize SPECpower2008 performance
 #
 
 import opentuner
@@ -11,87 +9,147 @@ from opentuner import EnumParameter
 from opentuner import IntegerParameter
 from opentuner import MeasurementInterface
 from opentuner import Result
+import os
+import subprocess
 
-JVM_FLAGS = [
-    'align-functions', 'align-jumps', 'align-labels',
-    'align-loops', 'asynchronous-unwind-tables',
-    'branch-count-reg', 'branch-probabilities',
-]
-
-# (name, min, max)
+# JVM 参数定义
 JVM_PARAMS = [
-    ('early-inlining-insns', 0, 1000),
-    ('gcse-cost-distance-ratio', 0, 100),
-    ('iv-max-considered-uses', 0, 1000),
+    # (参数名, 最小值, 最大值, 步长)
+    ('TargetSurvivorRatio', 50, 99, 1),
+    ('ParallelGCThreads', 1, 8, 1),
+    ('AllocatePrefetchDistance', 128, 512, 32),
+    ('AllocatePrefetchLines', 4, 16, 2),
+    ('InitialTenuringThreshold', 1, 5, 1),
+    ('MaxTenuringThreshold', 3, 15, 1),
+    ('InlineSmallCode', 1000, 20000, 1000),
+    ('MaxInlineSize', 100, 500, 50),
+    ('FreqInlineSize', 1000, 10000, 500),
+    ('UseAVX', 0, 3, 1),
+]
+
+# 布尔类型的 JVM 参数
+JVM_FLAGS = [
+    'UseParallelGC',
+    'OptimizeFill',
+    'AggressiveHeap',
+    'AlwaysPreTouch',
+    'TieredCompilation',
+    'UseFPUForSpilling',
 ]
 
 
-class GccFlagsTuner(MeasurementInterface):
+class SPECpowerTuner(MeasurementInterface):
 
     def manipulator(self):
         """
-        Define the search space by creating a
-        ConfigurationManipulator
+        Define the search space for JVM parameters
         """
         manipulator = ConfigurationManipulator()
-        manipulator.add_parameter(
-            IntegerParameter('opt_level', 0, 3))
+
+        # 添加数值型参数
+        for param, min_val, max_val, step in JVM_PARAMS:
+            manipulator.add_parameter(
+                IntegerParameter(param, min_val, max_val)
+            )
+
+        # 添加布尔型参数（启用/禁用）
         for flag in JVM_FLAGS:
             manipulator.add_parameter(
-                EnumParameter(flag,
-                              ['on', 'off', 'default']))
-        for param, min, max in JVM_PARAMS:
-            manipulator.add_parameter(
-                IntegerParameter(param, min, max))
+                EnumParameter(flag, ['on', 'off'])
+            )
+
         return manipulator
 
-    def compile(self, cfg, id):
+    def build_java_opts(self, cfg):
         """
-        Compile a given configuration in parallel
+        根据配置构建 JVMOPTIONS 环境变量
         """
-        gcc_cmd = 'g++ apps/raytracer.cpp -o ./tmp{0}.bin'.format(id)
-        gcc_cmd += ' -O{0}'.format(cfg['opt_level'])
+        java_opts = []
+
+        # 处理数值型参数
+        for param, min_val, max_val, step in JVM_PARAMS:
+            value = cfg[param]
+            java_opts.append(f"-XX:{param}={value}")
+
+        # 处理布尔型参数
         for flag in JVM_FLAGS:
             if cfg[flag] == 'on':
-                gcc_cmd += ' -f{0}'.format(flag)
-            elif cfg[flag] == 'off':
-                gcc_cmd += ' -fno-{0}'.format(flag)
-        for param, min, max in JVM_PARAMS:
-            gcc_cmd += ' --param {0}={1}'.format(
-                param, cfg[param])
-        print('Compiling with command: {0}'.format(gcc_cmd))
-        return self.call_program(gcc_cmd)
+                java_opts.append(f"-XX:+{flag}")
+            else:
+                java_opts.append(f"-XX:-{flag}")
 
-    def run_precompiled(self, desired_result, input, limit, compile_result, id):
+        return ' '.join(java_opts)
+
+    def run(self, desired_result, input, limit):
         """
-        Run a compile_result from compile() sequentially and return performance
-        """
-        assert compile_result['returncode'] == 0
-
-        try:
-            run_result = self.call_program('./tmp{0}.bin'.format(id))
-            assert run_result['returncode'] == 0
-        finally:
-            self.call_program('rm ./tmp{0}.bin'.format(id))
-
-        return Result(time=run_result['time'])
-
-    def compile_and_run(self, desired_result, input, limit):
-        """
-        Compile and run a given configuration then
-        return performance
+        Run SPECpower2008 with the given JVM configuration
         """
         cfg = desired_result.configuration.data
-        compile_result = self.compile(cfg, 0)
-        return self.run_precompiled(desired_result, input, limit, compile_result, 0)
+
+        # 构建 JVMOPTIONS
+        java_opts = self.build_java_opts(cfg)
+        print(f"Testing configuration: {java_opts}")
+
+        # 设置环境变量
+        env = os.environ.copy()
+        env['JVMOPTIONS'] = java_opts
+
+        try:
+            # 运行 SPECpower2008 基准测试
+            # 假设有一个运行 SPECpower2008 的脚本
+            home_dir = os.environ.get('HOME')
+            cmd = [f'{home_dir}/compiler-test/benchmark/SPECpower2008/runssj-3350.sh']  # 替换为实际的 SPECpower 运行脚本
+
+            run_result = self.call_program(cmd, env=env)
+
+            if run_result['returncode'] != 0:
+                print(f"Run failed with return code: {run_result['returncode']}")
+                return Result(time=0)
+
+            # 解析性能指标
+            performance = self.parse_specpower_output(run_result['stdout'])
+            return Result(time=1.0/performance)
+
+        except Exception as e:
+            print(f"Error during run: {e}")
+            return Result(time=0)
+
+    def parse_specpower_output(self, output):
+        """
+        解析 SPECpower2008 的输出，提取性能指标
+        """
+        lines = output.split('\n')
+
+        # 示例：查找包含性能指标的行
+        for line in lines:
+            if ' run; ssj_ops@100%' in line:
+                try:
+                    parts = line.split()
+                    performance = float(parts[4])
+                    performance = performance.replace(',', '')
+                    print(f"Parsed performance: {performance}")
+                    return int(performance)
+                except:
+                    continue
+        print("Warning: Could not parse performance from output")
+        return int('inf')
 
     def save_final_config(self, configuration):
-        '''
-        called at the end of autotuning with the best resultsdb.models.Configuration
-        '''
-        print("Final configuration", configuration.data)
+        """
+        Save the best configuration found
+        """
+        best_opts = self.build_java_opts(configuration.data)
+        print(f"\nBest JVM configuration found:")
+        print(f"JVMOPTIONS='{best_opts}'")
+
+        # 保存到文件
+        with open('best_jvm_config.txt', 'w') as f:
+            f.write(f"JVMOPTIONS='{best_opts}'\n")
+
+        print("Configuration saved to best_jvm_config.txt")
 
 
 if __name__ == '__main__':
     argparser = opentuner.default_argparser()
-    GccFlagsTuner.main(argparser.parse_args())
+    args = argparser.parse_args()
+    SPECpowerTuner.main(args)
