@@ -108,6 +108,7 @@ class SPECpowerTuner(MeasurementInterface):
         # 设置环境变量
         env = os.environ.copy()
         env['JVMOPTIONS'] = java_opts
+        env['PRESET_OPTIONS'] = os.environ.get('PRESET_OPTIONS', '')
 
         try:
             # 运行 SPECpower2008 基准测试
