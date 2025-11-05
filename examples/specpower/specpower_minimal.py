@@ -47,7 +47,7 @@ JVM_FLAGS = [
     'UseLargePages',
     'UseHugeTLBFS',
     'UseTransparentHugePages',
-    'AggressiveOpts',
+    # 'AggressiveOpts', not supported
 ]
 
 def executable_file(path):
