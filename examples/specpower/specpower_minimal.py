@@ -104,8 +104,6 @@ class SPECpowerTuner(MeasurementInterface):
 
         # 构建 JVMOPTIONS
         java_opts = self.build_java_opts(cfg)
-        if self.args.trace_level > 0:
-            print(f"Testing configuration: {java_opts}")
 
         # 设置环境变量
         env = os.environ.copy()
@@ -130,6 +128,8 @@ class SPECpowerTuner(MeasurementInterface):
                 print("STDOUT from script:", run_result['stdout'])
                 print("STDERR from script:", run_result['stderr'])
             performance = self.parse_specpower_output(run_result['stdout'])
+            if self.args.trace_level > 0:
+                print(f"Test result is {performance} for testing configuration: {java_opts}")
             return Result(time=1.0/performance)
 
         except Exception as e:
@@ -171,7 +171,7 @@ class SPECpowerTuner(MeasurementInterface):
         with open('best_jvm_config.txt', 'w') as f:
             f.write(f"JVMOPTIONS='{best_opts}'\n")
 
-        if self.args.trace_level > 0:
+        if self.args.trace_level > 1:
             print("Configuration saved to best_jvm_config.txt")
 
 
@@ -184,7 +184,7 @@ if __name__ == '__main__':
         help='Path to the SPECpower2008 benchmark run script'
     )
     argparser.add_argument(
-        '--trace-level', type=int, default=0,
+        '--trace-level', type=int, default=1,
         help='Level of tracing for debugging purposes'
     )
     args = argparser.parse_args()
