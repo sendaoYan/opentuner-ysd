@@ -9,6 +9,7 @@ from opentuner import EnumParameter
 from opentuner import IntegerParameter
 from opentuner import MeasurementInterface
 from opentuner import Result
+from pathlib import Path
 import os
 import subprocess
 
@@ -36,6 +37,16 @@ JVM_FLAGS = [
     'TieredCompilation',
     'UseFPUForSpilling',
 ]
+
+def executable_file(path):
+    path_obj = Path(path)
+    if not path_obj.exists():
+        raise argparse.ArgumentTypeError(f"file not exists: {path}")
+    if not path_obj.is_file():
+        raise argparse.ArgumentTypeError(f"not a regular file: {path}")
+    if not os.access(path, os.X_OK):
+        raise argparse.ArgumentTypeError(f"file not executable: {path}")
+    return os.path.abspath(path_obj)
 
 
 class SPECpowerTuner(MeasurementInterface):
@@ -97,13 +108,16 @@ class SPECpowerTuner(MeasurementInterface):
         try:
             # 运行 SPECpower2008 基准测试
             # 假设有一个运行 SPECpower2008 的脚本
-            home_dir = os.environ.get('HOME')
-            cmd = [f'{home_dir}/compiler-test/benchmark/SPECpower2008/runssj-3350.sh']  # 替换为实际的 SPECpower 运行脚本
+            benchmark_script = self.args.benchmark_script
+            cmd = f"{benchmark_script}"
 
             run_result = self.call_program(cmd, env=env)
 
             if run_result['returncode'] != 0:
                 print(f"Run failed with return code: {run_result['returncode']}")
+                print("Test script:", cmd)
+                print("STDOUT:", run_result['stdout'])
+                print("STDERR:", run_result['stderr'])
                 return Result(time=0)
 
             # 解析性能指标
@@ -151,5 +165,11 @@ class SPECpowerTuner(MeasurementInterface):
 
 if __name__ == '__main__':
     argparser = opentuner.default_argparser()
+    argparser.add_argument(
+        '--benchmark-script',
+        type=executable_file,
+        required=True,
+        help='Path to the SPECpower2008 benchmark run script'
+    )
     args = argparser.parse_args()
     SPECpowerTuner.main(args)
