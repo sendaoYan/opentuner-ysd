@@ -3,6 +3,8 @@
 # Autotune JVM flags to optimize SPECpower2008 performance
 #
 
+import argparse
+import sys
 import opentuner
 from opentuner import ConfigurationManipulator
 from opentuner import EnumParameter
@@ -12,6 +14,7 @@ from opentuner import Result
 from pathlib import Path
 import os
 import subprocess
+import re
 
 # JVM 参数定义
 JVM_PARAMS = [
@@ -95,11 +98,14 @@ class SPECpowerTuner(MeasurementInterface):
         """
         Run SPECpower2008 with the given JVM configuration
         """
+        if self.args.trace_level > 2:
+            print("-----------------------------------------------------------------")
         cfg = desired_result.configuration.data
 
         # 构建 JVMOPTIONS
         java_opts = self.build_java_opts(cfg)
-        print(f"Testing configuration: {java_opts}")
+        if self.args.trace_level > 0:
+            print(f"Testing configuration: {java_opts}")
 
         # 设置环境变量
         env = os.environ.copy()
@@ -107,7 +113,6 @@ class SPECpowerTuner(MeasurementInterface):
 
         try:
             # 运行 SPECpower2008 基准测试
-            # 假设有一个运行 SPECpower2008 的脚本
             benchmark_script = self.args.benchmark_script
             cmd = f"{benchmark_script}"
 
@@ -121,6 +126,9 @@ class SPECpowerTuner(MeasurementInterface):
                 return Result(time=0)
 
             # 解析性能指标
+            if self.args.trace_level > 1:
+                print("STDOUT from script:", run_result['stdout'])
+                print("STDERR from script:", run_result['stderr'])
             performance = self.parse_specpower_output(run_result['stdout'])
             return Result(time=1.0/performance)
 
@@ -132,21 +140,24 @@ class SPECpowerTuner(MeasurementInterface):
         """
         解析 SPECpower2008 的输出，提取性能指标
         """
+        output = output.decode('utf-8') if isinstance(output, bytes) else output
         lines = output.split('\n')
-
-        # 示例：查找包含性能指标的行
+        pattern = r"ssj_ops@100%\s*=\s*([\d,]+)"
         for line in lines:
             if ' run; ssj_ops@100%' in line:
                 try:
-                    parts = line.split()
-                    performance = float(parts[4])
-                    performance = performance.replace(',', '')
-                    print(f"Parsed performance: {performance}")
-                    return int(performance)
-                except:
+                    line = line.strip()
+                    if self.args.trace_level > 2:
+                        print(f"Output line: {line}")
+                    match = re.search(pattern, line)
+                    if match:
+                        performance = match.group(1).replace(',', '')
+                        return int(performance)
+                except Exception as e:
+                    print(f"Error parsing line '{line}': {e}")
                     continue
         print("Warning: Could not parse performance from output")
-        return int('inf')
+        return int(sys.maxsize)
 
     def save_final_config(self, configuration):
         """
@@ -160,7 +171,8 @@ class SPECpowerTuner(MeasurementInterface):
         with open('best_jvm_config.txt', 'w') as f:
             f.write(f"JVMOPTIONS='{best_opts}'\n")
 
-        print("Configuration saved to best_jvm_config.txt")
+        if self.args.trace_level > 0:
+            print("Configuration saved to best_jvm_config.txt")
 
 
 if __name__ == '__main__':
@@ -170,6 +182,10 @@ if __name__ == '__main__':
         type=executable_file,
         required=True,
         help='Path to the SPECpower2008 benchmark run script'
+    )
+    argparser.add_argument(
+        '--trace-level', type=int, default=0,
+        help='Level of tracing for debugging purposes'
     )
     args = argparser.parse_args()
     SPECpowerTuner.main(args)
