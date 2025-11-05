@@ -22,23 +22,32 @@ JVM_PARAMS = [
     ('TargetSurvivorRatio', 50, 99, 1),
     ('ParallelGCThreads', 1, 8, 1),
     ('AllocatePrefetchDistance', 128, 512, 32),
-    ('AllocatePrefetchLines', 4, 16, 2),
-    ('InitialTenuringThreshold', 1, 5, 1),
-    ('MaxTenuringThreshold', 3, 15, 1),
+    ('AllocatePrefetchLines', 1, 64, 2),
+    ('InitialTenuringThreshold', 1, 10, 1),
+    ('MaxTenuringThreshold', 1, 16, 1),
     ('InlineSmallCode', 1000, 20000, 1000),
     ('MaxInlineSize', 100, 500, 50),
     ('FreqInlineSize', 1000, 10000, 500),
     ('UseAVX', 0, 3, 1),
+    ('LoopUnrollLimit', 1, 500, 5),
+    ('InitialHeapSize', 2500*1024*1024, 3500*1024*1024, 100*1024*1024),
+    ('NewRatio', 1, 10, 1),
+    ('SurvivorRatio', 1, 20, 2),
 ]
 
 # 布尔类型的 JVM 参数
 JVM_FLAGS = [
     'UseParallelGC',
+    'CheckIntrinsics',
     'OptimizeFill',
     'AggressiveHeap',
     'AlwaysPreTouch',
     'TieredCompilation',
     'UseFPUForSpilling',
+    'UseLargePages',
+    'UseHugeTLBFS',
+    'UseTransparentHugePages',
+    'AggressiveOpts',
 ]
 
 def executable_file(path):
@@ -84,6 +93,8 @@ class SPECpowerTuner(MeasurementInterface):
         for param, min_val, max_val, step in JVM_PARAMS:
             value = cfg[param]
             java_opts.append(f"-XX:{param}={value}")
+            if param == 'InitialHeapSize':
+                java_opts.append(f"-XX:MaxHeapSize={value}")
 
         # 处理布尔型参数
         for flag in JVM_FLAGS:
