@@ -113,6 +113,10 @@ class SPECpowerTuner(MeasurementInterface):
             print("-----------------------------------------------------------------")
         cfg = desired_result.configuration.data
 
+        # check options restrictions
+        if cfg['InitialTenuringThreshold'] > cfg['MaxTenuringThreshold']:
+            return Result(time=float('inf'))
+
         # 构建 JVMOPTIONS
         java_opts = self.build_java_opts(cfg)
         # 预验证 JVM 是否能启动
