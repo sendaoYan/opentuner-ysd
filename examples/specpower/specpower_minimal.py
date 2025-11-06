@@ -111,6 +111,7 @@ class SPECpowerTuner(MeasurementInterface):
         Run SPECpower2008 with the given JVM configuration
         """
         # record the index of current test
+        global index
         index += 1
 
         if self.args.trace_level > 2:
