@@ -16,6 +16,7 @@ import os
 import subprocess
 import re
 
+index = 0
 # JVM 参数定义
 JVM_PARAMS = [
     # (参数名, 最小值, 最大值, 步长)
@@ -109,6 +110,9 @@ class SPECpowerTuner(MeasurementInterface):
         """
         Run SPECpower2008 with the given JVM configuration
         """
+        # record the index of current test
+        index += 1
+
         if self.args.trace_level > 2:
             print("-----------------------------------------------------------------")
         cfg = desired_result.configuration.data
@@ -163,8 +167,10 @@ class SPECpowerTuner(MeasurementInterface):
                 print("STDOUT from script:", run_result['stdout'])
                 print("STDERR from script:", run_result['stderr'])
             performance = self.parse_specpower_output(run_result['stdout'])
+            with open('specpower_results.log', 'a') as f:
+                f.write(f"Configuration index: {index}, Performance: {performance}, JVMOPTIONS: {java_opts}\n")
             if self.args.trace_level > 0:
-                print(f"Test result is {performance} for testing configuration: {java_opts}")
+                print(f"Test result is {performance} for testing configuration index: {index}")
             return Result(time=1.0/performance)
 
         except Exception as e:
@@ -226,4 +232,5 @@ if __name__ == '__main__':
     os.remove('best_jvm_config.txt') if os.path.exists('best_jvm_config.txt') else None
     os.remove('jvm-error.log') if os.path.exists('jvm-error.log') else None
     os.remove('jvm-warning.log') if os.path.exists('jvm-warning.log') else None
+    os.remove('specpower_results.log') if os.path.exists('specpower_results.log') else None
     SPECpowerTuner.main(args)
