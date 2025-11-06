@@ -127,13 +127,13 @@ class SPECpowerTuner(MeasurementInterface):
                 f.write(f"java check failed with return code: {result.returncode}\n")
                 f.write(f"java check output: {output}\n")
                 f.write("------------------------------------------------------------\n")
-            return Result(time=sys.maxsize)
+            return Result(time=float('inf'))
         if 'warning' in output.lower() or 'error' in output.lower():
             with open('jvm-warning.log', 'a') as f:
                 f.write(f"java check command: {verify_command}\n")
                 f.write(f"java check output: {output}\n")
                 f.write("------------------------------------------------------------\n")
-            return Result(time=sys.maxsize)
+            return Result(time=float('inf'))
 
         # 设置环境变量
         env = os.environ.copy()
@@ -152,7 +152,7 @@ class SPECpowerTuner(MeasurementInterface):
                 print("Test script:", cmd)
                 print("STDOUT:", run_result['stdout'])
                 print("STDERR:", run_result['stderr'])
-                return Result(time=sys.maxsize)
+                return Result(time=float('inf'))
 
             # 解析性能指标
             if self.args.trace_level > 1:
@@ -165,7 +165,7 @@ class SPECpowerTuner(MeasurementInterface):
 
         except Exception as e:
             print(f"Error during run: {e}")
-            return Result(time=sys.maxsize)
+            return Result(time=float('inf'))
 
     def parse_specpower_output(self, output):
         """
@@ -188,7 +188,7 @@ class SPECpowerTuner(MeasurementInterface):
                     print(f"Error parsing line '{line}': {e}")
                     continue
         print("Warning: Could not parse performance from output")
-        return int(sys.maxsize)
+        return float('inf')
 
     def save_final_config(self, configuration):
         """
