@@ -29,7 +29,7 @@ JVM_PARAMS = [
     ('InlineSmallCode', 1000, 20000, 1000),
     ('MaxInlineSize', 100, 500, 50),
     ('FreqInlineSize', 1000, 10000, 500),
-    ('UseAVX', 0, 3, 1),
+    ('UseAVX', 0, 2, 1),
     ('LoopUnrollLimit', 1, 500, 5),
     ('InitialHeapSize', 2500*1024*1024, 3500*1024*1024, 100*1024*1024),
     ('NewRatio', 1, 10, 1),
