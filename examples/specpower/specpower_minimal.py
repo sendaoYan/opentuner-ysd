@@ -22,7 +22,7 @@ JVM_PARAMS = [
     ('TargetSurvivorRatio', 50, 99, 1),
     ('ParallelGCThreads', 1, 8, 1),
     ('AllocatePrefetchDistance', 128, 512, 32),
-    ('AllocatePrefetchLines', 1, 64, 2),
+    ('AllocatePrefetchLines', 1, 27, 2),
     ('InitialTenuringThreshold', 1, 10, 1),
     ('MaxTenuringThreshold', 1, 16, 1),
     ('InlineSmallCode', 1000, 20000, 1000),
@@ -115,6 +115,25 @@ class SPECpowerTuner(MeasurementInterface):
 
         # 构建 JVMOPTIONS
         java_opts = self.build_java_opts(cfg)
+        # 预验证 JVM 是否能启动
+        verify_command = f"java -XX:+UnlockDiagnosticVMOptions {java_opts} -version"
+        result = subprocess.run(
+            verify_command, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8'
+        )
+        output = result.stdout + result.stderr
+        if result.returncode != 0:
+            with open('jvm-error.log', 'a') as f:
+                f.write(f"java check command: {verify_command}\n")
+                f.write(f"java check failed with return code: {result.returncode}\n")
+                f.write(f"java check output: {output}\n")
+                f.write("------------------------------------------------------------\n")
+            return Result(time=sys.maxsize)
+        if 'warning' in output.lower() or 'error' in output.lower():
+            with open('jvm-warning.log', 'a') as f:
+                f.write(f"java check command: {verify_command}\n")
+                f.write(f"java check output: {output}\n")
+                f.write("------------------------------------------------------------\n")
+            return Result(time=sys.maxsize)
 
         # 设置环境变量
         env = os.environ.copy()
@@ -126,14 +145,14 @@ class SPECpowerTuner(MeasurementInterface):
             benchmark_script = self.args.benchmark_script
             cmd = f"{benchmark_script}"
 
-            run_result = self.call_program(cmd, env=env)
+            run_result = self.call_program(cmd, env=env, text=True)
 
             if run_result['returncode'] != 0:
                 print(f"Run failed with return code: {run_result['returncode']}")
                 print("Test script:", cmd)
                 print("STDOUT:", run_result['stdout'])
                 print("STDERR:", run_result['stderr'])
-                return Result(time=0)
+                return Result(time=sys.maxsize)
 
             # 解析性能指标
             if self.args.trace_level > 1:
@@ -146,7 +165,7 @@ class SPECpowerTuner(MeasurementInterface):
 
         except Exception as e:
             print(f"Error during run: {e}")
-            return Result(time=0)
+            return Result(time=sys.maxsize)
 
     def parse_specpower_output(self, output):
         """
@@ -200,4 +219,7 @@ if __name__ == '__main__':
         help='Level of tracing for debugging purposes'
     )
     args = argparser.parse_args()
+    os.remove('best_jvm_config.txt') if os.path.exists('best_jvm_config.txt') else None
+    os.remove('jvm-error.log') if os.path.exists('jvm-error.log') else None
+    os.remove('jvm-warning.log') if os.path.exists('jvm-warning.log') else None
     SPECpowerTuner.main(args)
