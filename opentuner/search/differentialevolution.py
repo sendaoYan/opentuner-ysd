@@ -55,10 +55,26 @@ class DifferentialEvolution(SearchTechnique):
         return ['population_size', 'cr', 'n_cross', 'information_sharing']
 
     def initial_population(self):
-        self.population = [PopulationMember(
-            self.driver.get_configuration(
+        # A resumed run already has results, so start the population from the
+        # best configurations the run has found instead of replacing them
+        # with random ones.  Seeded members already have a result, so mark
+        # them submitted; random members fill any remaining slots and are
+        # tested as before.  On a fresh run best_result is None and this is
+        # the original all-random population.
+        seeded = []
+        if self.driver.best_result is not None:
+            seeded = list(reversed(
+                self.driver.top_results(self.population_size)))
+        random_size = max(0, self.population_size - len(seeded))
+        self.population = [
+            PopulationMember(self.driver.get_configuration(
                 self.manipulator.random()), submitted=False)
-            for z in range(self.population_size)]
+            for z in range(random_size)]
+        # worst first, best last: oldest_pop_member() replaces the worst
+        # seeded configuration before the better ones
+        self.population.extend(
+            PopulationMember(result.configuration, submitted=True)
+            for result in seeded)
 
     def oldest_pop_member(self):
         # since tests are run in parallel, exclude things with a replacement pending

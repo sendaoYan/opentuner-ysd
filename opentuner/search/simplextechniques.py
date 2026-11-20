@@ -90,6 +90,12 @@ class SimplexTechnique(SequentialSearchTechnique):
         """
         if self.seed_cfg is not None:
             return self.seed_cfg
+        if (self.driver.best_result is not None
+                and self.driver.best_result.state == 'OK'):
+            # A resumed run already knows a good point; start the simplex
+            # around it instead of throwing that away for a random one.
+            return self.manipulator.copy(
+                self.driver.best_result.configuration.data)
         return self.manipulator.random()
 
     @abc.abstractmethod

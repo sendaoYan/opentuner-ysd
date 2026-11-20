@@ -9,9 +9,11 @@ import opentuner
 from opentuner import resultsdb
 from opentuner.measurement import MeasurementInterface
 from opentuner.resultsdb.models import DesiredResult, Result, TuningRun
+from opentuner.search.differentialevolution import DifferentialEvolution
 from opentuner.search.driver import SearchDriver
 from opentuner.search.manipulator import (ConfigurationManipulator,
                                           IntegerParameter)
+from opentuner.search.simplextechniques import SimplexTechnique
 from opentuner.tuningrunmain import TuningRunMain
 
 
@@ -257,3 +259,162 @@ def test_resume_without_unfinished_run_starts_a_new_one(tmp_path):
         assert session.query(TuningRun).count() == 2
     finally:
         session.close()
+
+def start_resumed_run(tmp_path):
+    run_interrupted(tmp_path)
+    args = make_args(tmp_path, resume=True)
+    trm = TuningRunMain(TinyInterface(args), args)
+    trm.init()
+    return trm
+
+
+def subtechnique(trm, cls):
+    return next(technique
+                for technique in trm.search_driver.root_technique.techniques
+                if isinstance(technique, cls))
+
+
+def test_top_results_are_distinct_and_best_first(tmp_path):
+    trm = start_resumed_run(tmp_path)
+    try:
+        driver = trm.search_driver
+        top = driver.top_results(30)
+        assert top
+        assert top[0].id == driver.best_result.id
+        assert len(top) == len(set(result.configuration_id
+                                  for result in top))
+        assert all(result.state == 'OK' for result in top)
+        assert len(driver.top_results(1)) == 1
+        assert driver.top_results(0) == []
+    finally:
+        trm.session.close()
+
+
+def test_top_results_skips_failed_and_duplicate_results(tmp_path):
+    trm = start_resumed_run(tmp_path)
+    try:
+        driver = trm.search_driver
+        best = driver.best_result
+
+        duplicate = Result(configuration=best.configuration,
+                           tuning_run=trm.tuning_run,
+                           time=best.time)
+        trm.session.add(duplicate)
+
+        failed_config = driver.get_configuration({'x': 99})
+        failed = Result(configuration=failed_config,
+                        tuning_run=trm.tuning_run,
+                        time=0.0, state='ERROR')
+        trm.session.add(failed)
+        trm.session.flush()
+
+        top = driver.top_results(30)
+        assert failed.id not in [result.id for result in top]
+        assert len([result for result in top
+                    if result.configuration_id == best.configuration.id]) == 1
+        assert all(result.state == 'OK' for result in top)
+    finally:
+        trm.session.close()
+
+
+def test_resume_warm_starts_differential_evolution(tmp_path):
+    trm = start_resumed_run(tmp_path)
+    try:
+        driver = trm.search_driver
+        top = driver.top_results(30)
+        assert top
+
+        de = subtechnique(trm, DifferentialEvolution)
+        de.initial_population()
+
+        seeded = [member for member in de.population if member.submitted]
+        assert len(de.population) == de.population_size
+        assert len(seeded) == len(top)
+        assert [member.config.id for member in seeded] == [
+            result.configuration_id for result in reversed(top)]
+        random_members = de.population[:de.population_size - len(seeded)]
+        assert not any(member.submitted for member in random_members)
+        # best is last, so it is the last population member replaced
+        assert de.population[-1].config.id == (
+            driver.best_result.configuration.id)
+    finally:
+        trm.session.close()
+
+
+def test_warm_start_fills_whole_population_when_enough_results(tmp_path):
+    trm = start_resumed_run(tmp_path)
+    try:
+        top = trm.search_driver.top_results(30)
+        assert top
+
+        de = subtechnique(trm, DifferentialEvolution)
+        de.population_size = len(top)
+        de.initial_population()
+
+        assert len(de.population) == len(top)
+        assert all(member.submitted for member in de.population)
+    finally:
+        trm.session.close()
+
+
+def test_resume_warm_starts_simplex_at_best(tmp_path):
+    trm = start_resumed_run(tmp_path)
+    try:
+        driver = trm.search_driver
+        simplex = subtechnique(trm, SimplexTechnique)
+        assert simplex.seed_cfg is None
+
+        simplex.desired_configuration()
+
+        assert simplex.simplex_points
+        assert simplex.simplex_points[0].id == (
+            driver.best_result.configuration.id)
+    finally:
+        trm.session.close()
+
+
+def test_explicit_simplex_seed_overrides_warm_start(tmp_path):
+    trm = start_resumed_run(tmp_path)
+    try:
+        simplex = subtechnique(trm, SimplexTechnique)
+        simplex.seed_cfg = {'x': 7}
+        assert simplex.initial_simplex_seed() == {'x': 7}
+    finally:
+        trm.session.close()
+
+
+def test_fresh_run_does_not_call_warm_start_query(tmp_path):
+    # Warm start must be completely inert on a fresh run: no results exist,
+    # so the techniques must not even query for them.
+    args = make_args(tmp_path)
+    trm = TuningRunMain(TinyInterface(args), args)
+    trm.init()
+    try:
+        driver = trm.search_driver
+        assert driver.best_result is None
+
+        def fail(count):
+            raise AssertionError('top_results called on a fresh run')
+
+        driver.top_results = fail
+        driver.run_generation_techniques()
+        subtechnique(trm, DifferentialEvolution).initial_population()
+    finally:
+        trm.session.close()
+
+
+def test_fresh_run_does_not_warm_start(tmp_path):
+    args = make_args(tmp_path)
+    trm = TuningRunMain(TinyInterface(args), args)
+    trm.init()
+    try:
+        driver = trm.search_driver
+        assert driver.best_result is None
+        assert driver.top_results(10) == []
+
+        de = subtechnique(trm, DifferentialEvolution)
+        de.initial_population()
+        assert len(de.population) == de.population_size
+        assert not any(member.submitted for member in de.population)
+    finally:
+        trm.session.close()

@@ -250,6 +250,29 @@ class SearchDriver(DriverBase):
     def has_results(self, config):
         return self.results_query(config=config).count() > 0
 
+    def top_results(self, count):
+        """
+        Return up to count distinct successful results, best first.
+
+        Techniques use this to warm-start from what a run has already
+        measured (for example after --resume) instead of starting from
+        random configurations.
+        """
+        if count <= 0:
+            return []
+        rv = []
+        seen = set()
+        for result in (self.results_query(objective_ordered=True)
+                       .filter_by(state='OK')
+                       .limit(count * 4 + 8)):
+            if result.configuration_id in seen:
+                continue
+            seen.add(result.configuration_id)
+            rv.append(result)
+            if len(rv) >= count:
+                break
+        return rv
+
     def run_generation_techniques(self):
         tests_this_generation = 0
         self.plugin_proxy.before_techniques()
